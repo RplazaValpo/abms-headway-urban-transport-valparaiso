@@ -1,0 +1,1237 @@
+# En esta celda verifico la versión de Python que está usando Colab
+import sys
+print("Versión de Python:", sys.version)
+
+# En esta celda instalo el framework Mesa para poder construir modelos basados en agentes
+!pip install mesa
+
+# En esta celda defino el primer agente mínimo de la simulación
+from mesa import Agent
+
+class AgenteBasico(Agent):
+    def __init__(self, unique_id, model):
+        # Aquí inicializo el agente con su identificador único y el modelo al que pertenece
+        super().__init__(unique_id, model)
+        
+        # Defino una variable de estado simple del agente
+        self.estado = 0
+    
+    def step(self):
+        # En cada paso del tiempo el agente incrementa su estado en 1
+        self.estado += 1
+
+# En esta celda defino la clase de agente "Colectivo", consistente con la definición formal en LaTeX
+from mesa import Agent
+
+class Colectivo(Agent):
+    def __init__(self, unique_id, model, posicion_inicial, sentido, velocidad):
+        # Aquí inicializo el agente con su identificador único y el modelo al que pertenece
+        super().__init__(unique_id, model)
+        
+        # En esta variable guardo el tramo espacial discreto que ocupa el colectivo (e_i)
+        self.posicion = posicion_inicial
+        
+        # En esta variable guardo el sentido de circulación: +1 = ida, -1 = vuelta
+        self.sentido = sentido
+        
+        # En esta variable guardo la velocidad del colectivo (puede interpretarse como tramos por tick)
+        self.velocidad = velocidad
+        
+        # En esta variable llevo el retraso acumulado del colectivo respecto a un patrón de referencia
+        self.retraso = 0.0
+    
+    def step(self):
+        # En cada tick actualizaré el estado del agente; por ahora solo avanzo según el sentido y la velocidad
+        # (Más adelante incorporaré detenciones, congestión y cálculo detallado del retraso)
+        self.posicion += self.sentido * self.velocidad
+
+
+# En esta celda corrijo la clase del agente "Colectivo" para que sea compatible con Mesa 3.x
+from mesa import Agent
+
+class Colectivo(Agent):
+    def __init__(self, model, posicion_inicial, sentido, velocidad):
+        # Aquí inicializo correctamente el agente usando la API moderna de Mesa
+        super().__init__(model)
+        
+        # En esta variable guardo el tramo espacial discreto que ocupa el colectivo (e_i)
+        self.posicion = posicion_inicial
+        
+        # En esta variable guardo el sentido de circulación: +1 = ida, -1 = vuelta
+        self.sentido = sentido
+        
+        # En esta variable guardo la velocidad del colectivo (tramos por tick)
+        self.velocidad = velocidad
+        
+        # En esta variable llevo el retraso acumulado del colectivo
+        self.retraso = 0.0
+    
+    def step(self):
+        # En cada tick actualizo solo la posición según velocidad y sentido
+        self.posicion += self.sentido * self.velocidad
+
+
+# En esta celda verifico que Mesa quedó correctamente instalado y puedo importarlo en Python
+import mesa
+print("Versión de Mesa instalada:", mesa.__version__)
+
+
+
+# En esta celda redefino la clase Colectivo incorporando el espacio discreto y los bordes del sistema
+from mesa import Agent
+
+class Colectivo(Agent):
+    def __init__(self, unique_id, model, posicion_inicial, sentido, velocidad):
+        # Aquí inicializo correctamente el agente con el modelo (API Mesa 3.x)
+        super().__init__(model)
+        
+        # Identificador único del colectivo (lo manejo manualmente)
+        self.unique_id = unique_id
+        
+        # En esta variable guardo el tramo espacial discreto que ocupa el colectivo (e_i)
+        self.posicion = posicion_inicial
+        
+        # En esta variable guardo el sentido de circulación: +1 = ida, -1 = vuelta
+        self.sentido = sentido
+        
+        # En esta variable guardo la velocidad del colectivo (tramos por tick)
+        self.velocidad = velocidad
+        
+        # En esta variable llevo el retraso acumulado del colectivo
+        self.retraso = 0.0
+    
+    def step(self):
+        # Aquí calculo la nueva posición tentativamente según la dinámica mínima
+        nueva_posicion = self.posicion + self.sentido * self.velocidad
+        
+        # En este bloque impongo los bordes del corredor [0, L]
+        if nueva_posicion > self.model.longitud_corredor:
+            # Si el colectivo llega al extremo derecho, invierto el sentido (comienza la vuelta)
+            self.sentido = -1
+            self.posicion = self.model.longitud_corredor
+            
+        elif nueva_posicion < 0:
+            # Si el colectivo llega al extremo izquierdo, invierto el sentido (comienza la ida)
+            self.sentido = 1
+            self.posicion = 0
+            
+        else:
+            # Si está dentro del corredor, actualizo normalmente la posición
+            self.posicion = nueva_posicion
+
+
+# En esta celda redefino el modelo incorporando el espacio discreto y el punto de observación
+from mesa import Model
+
+class ModeloTransporte(Model):
+    def __init__(self, n_colectivos, longitud_corredor, punto_observacion):
+        super().__init__()
+        
+        # Número total de colectivos del sistema
+        self.n_colectivos = n_colectivos
+        
+        # Longitud total del corredor (N tramos)
+        self.longitud_corredor = longitud_corredor
+        
+        # Punto fijo de observación e*
+        self.punto_observacion = punto_observacion
+        
+        # Contador de tiempo discreto del sistema
+        self.tiempo = 0
+        
+        # Lista local de agentes
+        self.colectivos = []
+        
+        # En este bloque creo e incorporo los agentes al modelo
+        for i in range(self.n_colectivos):
+            # Todos parten en 0 por ahora, en sentido ida
+            colectivo = Colectivo(
+                unique_id=i,
+                model=self,
+                posicion_inicial=0,
+                sentido=1,
+                velocidad=1
+            )
+            
+            # Registro del agente en Mesa
+            self.agents.add(colectivo)
+
+# Registro local
+            self.colectivos.append(colectivo)
+    
+    def step(self):
+        # En cada tick hago avanzar a todos los agentes
+        self.agents.do("step")
+        
+        # Incremento el tiempo discreto del sistema
+        self.tiempo += 1
+
+
+# En esta celda pruebo explícitamente el espacio discreto y el rebote en los bordes
+
+# Defino un corredor de 12 tramos y un punto de observación en el tramo 8
+modelo_prueba_espacio = ModeloTransporte(
+    n_colectivos=2,
+    longitud_corredor=12,
+    punto_observacion=8
+)
+
+print("Estado inicial:")
+for c in modelo_prueba_espacio.colectivos:
+    print(f"Colectivo {c.unique_id} | Posición: {c.posicion} | Sentido: {c.sentido}")
+
+# Ejecuto 30 ticks para forzar rebotes
+for t in range(30):
+    modelo_prueba_espacio.step()
+
+print("\nEstado final después de 30 ticks:")
+for c in modelo_prueba_espacio.colectivos:
+    print(f"Colectivo {c.unique_id} | Posición: {c.posicion} | Sentido: {c.sentido}")
+
+
+# En esta celda extiendo el modelo para registrar los cruces por el punto de observación e*
+from mesa import Model
+
+class ModeloTransporte(Model):
+    def __init__(self, n_colectivos, longitud_corredor, punto_observacion):
+        super().__init__()
+        
+        # Número total de colectivos
+        self.n_colectivos = n_colectivos
+        
+        # Longitud del corredor (N tramos)
+        self.longitud_corredor = longitud_corredor
+        
+        # Punto fijo de observación e*
+        self.punto_observacion = punto_observacion
+        
+        # Tiempo discreto del sistema (t_k)
+        self.tiempo = 0
+        
+        # Lista de agentes
+        self.colectivos = []
+        
+        # En esta lista guardaré los tiempos de cruce tau_j
+        self.registro_cruces = []
+        
+        # Creo e incorporo los agentes
+        for i in range(self.n_colectivos):
+            colectivo = Colectivo(
+                unique_id=i,
+                model=self,
+                posicion_inicial=0,
+                sentido=1,
+                velocidad=1
+            )
+            
+            self.agents.add(colectivo)
+            self.colectivos.append(colectivo)
+    
+    def step(self):
+        # En cada tick hago avanzar a todos los agentes
+        self.agents.do("step")
+        
+        # En este bloque reviso si algún colectivo cruzó el punto e* en este tick
+        for c in self.colectivos:
+            if c.posicion == self.punto_observacion:
+                # Si coincide exactamente con e*, registro el instante tau_j
+                self.registro_cruces.append(self.tiempo)
+        
+        # Incremento el tiempo discreto del sistema
+        self.tiempo += 1
+
+# En esta celda pruebo el registro de cruces por el punto de observación e*
+
+modelo_prueba_e = ModeloTransporte(
+    n_colectivos=1,
+    longitud_corredor=12,
+    punto_observacion=5
+)
+
+# Ejecuto 20 ticks
+for t in range(20):
+    modelo_prueba_e.step()
+
+print("Tiempos de cruce registrados (tau_j):")
+print(modelo_prueba_e.registro_cruces)
+
+
+# En esta celda extiendo el modelo para calcular el headway H_j a partir de los tau_j
+from mesa import Model
+
+class ModeloTransporte(Model):
+    def __init__(self, n_colectivos, longitud_corredor, punto_observacion):
+        super().__init__()
+        
+        # Número total de colectivos
+        self.n_colectivos = n_colectivos
+        
+        # Longitud del corredor (N tramos)
+        self.longitud_corredor = longitud_corredor
+        
+        # Punto fijo de observación e*
+        self.punto_observacion = punto_observacion
+        
+        # Tiempo discreto del sistema (t_k)
+        self.tiempo = 0
+        
+        # Lista de agentes
+        self.colectivos = []
+        
+        # En esta lista guardo los tiempos de cruce tau_j
+        self.registro_cruces = []
+        
+        # En esta lista guardo los tiempos de paso H_j
+        self.headways = []
+        
+        # Creación e incorporación de agentes
+        for i in range(self.n_colectivos):
+            colectivo = Colectivo(
+                unique_id=i,
+                model=self,
+                posicion_inicial=0,
+                sentido=1,
+                velocidad=1
+            )
+            
+            self.agents.add(colectivo)
+            self.colectivos.append(colectivo)
+    
+    def step(self):
+        # En cada tick hago avanzar a todos los agentes
+        self.agents.do("step")
+        
+        # En este bloque reviso si algún colectivo cruzó el punto e* en este tick
+        for c in self.colectivos:
+            if c.posicion == self.punto_observacion:
+                
+                # Registro del nuevo tau_j
+                self.registro_cruces.append(self.tiempo)
+                
+                # Si ya existe un tau anterior, calculo el headway H_j
+                if len(self.registro_cruces) >= 2:
+                    tau_actual = self.registro_cruces[-1]
+                    tau_anterior = self.registro_cruces[-2]
+                    
+                    H = tau_actual - tau_anterior
+                    
+                    # Registro del headway H_j
+                    self.headways.append(H)
+        
+        # Incremento del tiempo discreto
+        self.tiempo += 1
+
+
+# En esta celda pruebo explícitamente el cálculo del headway H_j
+
+modelo_prueba_H = ModeloTransporte(
+    n_colectivos=1,
+    longitud_corredor=12,
+    punto_observacion=5
+)
+
+# Ejecuto 25 ticks
+for t in range(25):
+    modelo_prueba_H.step()
+
+print("Tiempos de cruce registrados (tau_j):")
+print(modelo_prueba_H.registro_cruces)
+
+print("\nHeadways calculados (H_j):")
+print(modelo_prueba_H.headways)
+
+
+
+
+# En esta celda extiendo el modelo para calcular métricas estadísticas del headway
+import numpy as np
+from mesa import Model
+
+class ModeloTransporte(Model):
+    def __init__(self, n_colectivos, longitud_corredor, punto_observacion):
+        super().__init__()
+        
+        # Número total de colectivos
+        self.n_colectivos = n_colectivos
+        
+        # Longitud del corredor
+        self.longitud_corredor = longitud_corredor
+        
+        # Punto fijo de observación e*
+        self.punto_observacion = punto_observacion
+        
+        # Tiempo discreto del sistema
+        self.tiempo = 0
+        
+        # Lista de agentes
+        self.colectivos = []
+        
+        # Registros temporales
+        self.registro_cruces = []   # tau_j
+        self.headways = []          # H_j
+        
+        # Creación e incorporación de agentes
+        for i in range(self.n_colectivos):
+            colectivo = Colectivo(
+                unique_id=i,
+                model=self,
+                posicion_inicial=0,
+                sentido=1,
+                velocidad=1
+            )
+            
+            self.agents.add(colectivo)
+            self.colectivos.append(colectivo)
+    
+    def step(self):
+        # Avance de todos los agentes
+        self.agents.do("step")
+        
+        # Registro de cruces y cálculo de headway
+        for c in self.colectivos:
+            if c.posicion == self.punto_observacion:
+                
+                self.registro_cruces.append(self.tiempo)
+                
+                if len(self.registro_cruces) >= 2:
+                    tau_actual = self.registro_cruces[-1]
+                    tau_anterior = self.registro_cruces[-2]
+                    H = tau_actual - tau_anterior
+                    self.headways.append(H)
+        
+        # Avance del tiempo del sistema
+        self.tiempo += 1
+    
+    # ===========================
+    # MÉTRICAS ESTADÍSTICAS
+    # ===========================
+    
+    def headway_medio(self):
+        # Calcula el promedio del headway: \bar{H}
+        if len(self.headways) == 0:
+            return None
+        return np.mean(self.headways)
+    
+    def varianza_headway(self):
+        # Calcula la varianza muestral del headway: \sigma_H^2
+        if len(self.headways) <= 1:
+            return None
+        return np.var(self.headways, ddof=1)
+    
+    def coeficiente_variacion(self):
+        # Calcula el coeficiente de variación del headway: CV = sigma / media
+        if len(self.headways) <= 1:
+            return None
+        
+        media = self.headway_medio()
+        varianza = self.varianza_headway()
+        desviacion = np.sqrt(varianza)
+        
+        if media == 0:
+            return None
+        
+        return desviacion / media
+
+
+# En esta celda pruebo las métricas estadísticas del headway
+
+modelo_prueba_metricas = ModeloTransporte(
+    n_colectivos=1,
+    longitud_corredor=12,
+    punto_observacion=5
+)
+
+# Ejecuto 60 ticks para obtener varios headways
+for t in range(60):
+    modelo_prueba_metricas.step()
+
+print("Tiempos de cruce (tau_j):")
+print(modelo_prueba_metricas.registro_cruces)
+
+print("\nHeadways (H_j):")
+print(modelo_prueba_metricas.headways)
+
+print("\nHeadway medio:")
+print(modelo_prueba_metricas.headway_medio())
+
+print("\nVarianza del headway:")
+print(modelo_prueba_metricas.varianza_headway())
+
+print("\nCoeficiente de variación (CV):")
+print(modelo_prueba_metricas.coeficiente_variacion())
+
+
+# En esta celda incorporo los tramos horarios como variable de contexto del modelo
+from mesa import Model
+
+class ModeloTransporte(Model):
+    def __init__(self, n_colectivos, longitud_corredor, punto_observacion, tramos_horarios):
+        super().__init__()
+        
+        # ===========================
+        # PARÁMETROS ESTRUCTURALES
+        # ===========================
+        
+        # Número total de colectivos
+        self.n_colectivos = n_colectivos
+        
+        # Longitud del corredor (N tramos)
+        self.longitud_corredor = longitud_corredor
+        
+        # Punto fijo de observación e*
+        self.punto_observacion = punto_observacion
+        
+        # Definición formal de los tramos horarios H = {h1, h2, ..., hM}
+        # Formato esperado:
+        # tramos_horarios = [
+        #   ("punta_manana", 0, 20),
+        #   ("valle", 21, 40),
+        #   ("punta_tarde", 41, 60)
+        # ]
+        self.tramos_horarios = tramos_horarios
+        
+        # ===========================
+        # TIEMPO DISCRETO DEL SISTEMA
+        # ===========================
+        
+        # Contador de tiempo discreto t_k
+        self.tiempo = 0
+        
+        # Tramo horario activo h_m = phi(t_k)
+        self.tramo_actual = None
+        
+        # ===========================
+        # AGENTES
+        # ===========================
+        
+        self.colectivos = []
+        
+        for i in range(self.n_colectivos):
+            colectivo = Colectivo(
+                unique_id=i,
+                model=self,
+                posicion_inicial=0,
+                sentido=1,
+                velocidad=1
+            )
+            
+            self.agents.add(colectivo)
+            self.colectivos.append(colectivo)
+        
+        # ===========================
+        # REGISTROS TEMPORALES
+        # ===========================
+        
+        self.registro_cruces = []   # tau_j
+        self.headways = []          # H_j
+    
+    # ===========================
+    # FUNCIÓN DE ASIGNACIÓN φ(t)
+    # ===========================
+    def asignar_tramo_horario(self):
+        # En esta función implemento la aplicación: t_k -> h_m
+        for nombre_tramo, t_inicio, t_fin in self.tramos_horarios:
+            if t_inicio <= self.tiempo <= t_fin:
+                return nombre_tramo
+        
+        # Si no cae en ningún tramo, retorno None (fuera de horizonte)
+        return None
+    
+    # ===========================
+    # PASO DEL MODELO
+    # ===========================
+    def step(self):
+        # 1. Asigno el tramo horario activo según el tiempo actual
+        self.tramo_actual = self.asignar_tramo_horario()
+        
+        # 2. Avance de todos los agentes (dinámica aún sin cambios por horario)
+        self.agents.do("step")
+        
+        # 3. Registro de cruces por el punto de observación
+        for c in self.colectivos:
+            if c.posicion == self.punto_observacion:
+                
+                self.registro_cruces.append(self.tiempo)
+                
+                if len(self.registro_cruces) >= 2:
+                    tau_actual = self.registro_cruces[-1]
+                    tau_anterior = self.registro_cruces[-2]
+                    H = tau_actual - tau_anterior
+                    self.headways.append(H)
+        
+        # 4. Avance del tiempo discreto
+        self.tiempo += 1
+
+
+# En esta celda pruebo la asignación de tramos horarios sin modificar aún la dinámica
+
+tramos = [
+    ("punta_manana", 0, 10),
+    ("valle", 11, 25),
+    ("punta_tarde", 26, 40)
+]
+
+modelo_prueba_tramos = ModeloTransporte(
+    n_colectivos=1,
+    longitud_corredor=12,
+    punto_observacion=5,
+    tramos_horarios=tramos
+)
+
+# Recorro 45 ticks y observo el tramo activo
+for t in range(45):
+    modelo_prueba_tramos.step()
+    print(f"t = {modelo_prueba_tramos.tiempo - 1} | tramo_activo = {modelo_prueba_tramos.tramo_actual}")
+
+
+# En esta celda redefino el agente Colectivo para que su velocidad dependa del tramo horario
+from mesa import Agent
+
+class Colectivo(Agent):
+    def __init__(self, unique_id, model, posicion_inicial, sentido, velocidad_base):
+        super().__init__(model)
+        
+        # Identificador único
+        self.unique_id = unique_id
+        
+        # Posición espacial discreta e_i
+        self.posicion = posicion_inicial
+        
+        # Sentido de circulación (+1 ida, -1 vuelta)
+        self.sentido = sentido
+        
+        # Velocidad base (sin efecto horario)
+        self.velocidad_base = velocidad_base
+        
+        # Retraso acumulado
+        self.retraso = 0.0
+    
+    def velocidad_efectiva(self):
+        """
+        En esta función ajusto la velocidad del colectivo según el tramo horario activo:
+        - Punta mañana  -> velocidad más baja (mayor congestión)
+        - Valle         -> velocidad normal
+        - Punta tarde   -> velocidad más baja
+        """
+        tramo = self.model.tramo_actual
+        
+        if tramo == "punta_manana":
+            return 0.5 * self.velocidad_base
+        
+        elif tramo == "valle":
+            return 1.0 * self.velocidad_base
+        
+        elif tramo == "punta_tarde":
+            return 0.6 * self.velocidad_base
+        
+        else:
+            # Fuera de rango horario: velocidad normal
+            return 1.0 * self.velocidad_base
+    
+    def step(self):
+        # Calculo la velocidad efectiva según el tramo horario
+        v_eff = self.velocidad_efectiva()
+        
+        # Nueva posición tentativa
+        nueva_posicion = self.posicion + self.sentido * v_eff
+        
+        # Impongo los bordes del corredor
+        if nueva_posicion > self.model.longitud_corredor:
+            self.sentido = -1
+            self.posicion = self.model.longitud_corredor
+        
+        elif nueva_posicion < 0:
+            self.sentido = 1
+            self.posicion = 0
+        
+        else:
+            self.posicion = nueva_posicion
+
+
+# En esta celda redefino el modelo para usar velocidad base en los agentes
+from mesa import Model
+
+class ModeloTransporte(Model):
+    def __init__(self, n_colectivos, longitud_corredor, punto_observacion, tramos_horarios):
+        super().__init__()
+        
+        self.n_colectivos = n_colectivos
+        self.longitud_corredor = longitud_corredor
+        self.punto_observacion = punto_observacion
+        self.tramos_horarios = tramos_horarios
+        
+        self.tiempo = 0
+        self.tramo_actual = None
+        
+        self.colectivos = []
+        self.registro_cruces = []
+        self.headways = []
+        
+        for i in range(self.n_colectivos):
+            colectivo = Colectivo(
+                unique_id=i,
+                model=self,
+                posicion_inicial=0,
+                sentido=1,
+                velocidad_base=1.0
+            )
+            
+            self.agents.add(colectivo)
+            self.colectivos.append(colectivo)
+    
+    def asignar_tramo_horario(self):
+        for nombre_tramo, t_inicio, t_fin in self.tramos_horarios:
+            if t_inicio <= self.tiempo <= t_fin:
+                return nombre_tramo
+        return None
+    
+    def step(self):
+        # 1. Asignación del tramo horario activo
+        self.tramo_actual = self.asignar_tramo_horario()
+        
+        # 2. Avance de los agentes con velocidad dependiente del tramo
+        self.agents.do("step")
+        
+        # 3. Registro de cruces por e*
+        for c in self.colectivos:
+            if int(c.posicion) == self.punto_observacion:
+                
+                self.registro_cruces.append(self.tiempo)
+                
+                if len(self.registro_cruces) >= 2:
+                    tau_actual = self.registro_cruces[-1]
+                    tau_anterior = self.registro_cruces[-2]
+                    H = tau_actual - tau_anterior
+                    self.headways.append(H)
+        
+        # 4. Avance del tiempo
+        self.tiempo += 1
+
+# En esta celda pruebo cómo los tramos horarios afectan la dinámica y el headway
+
+tramos = [
+    ("punta_manana", 0, 10),
+    ("valle", 11, 25),
+    ("punta_tarde", 26, 40)
+]
+
+modelo_prueba_horario = ModeloTransporte(
+    n_colectivos=1,
+    longitud_corredor=12,
+    punto_observacion=5,
+    tramos_horarios=tramos
+)
+
+# Ejecuto 80 ticks para observar varios regímenes
+for t in range(80):
+    modelo_prueba_horario.step()
+
+print("Cruces (tau_j):")
+print(modelo_prueba_horario.registro_cruces)
+
+print("\nHeadways con efecto horario (H_j):")
+print(modelo_prueba_horario.headways)
+
+
+# En esta celda redefino el agente Colectivo con congestión endógena (interacción entre vehículos)
+from mesa import Agent
+
+class Colectivo(Agent):
+    def __init__(self, unique_id, model, posicion_inicial, sentido, velocidad_base):
+        super().__init__(model)
+        
+        # Identificador único del colectivo
+        self.unique_id = unique_id
+        
+        # Posición espacial discreta (puede ser fraccionaria por la velocidad efectiva)
+        self.posicion = posicion_inicial
+        
+        # Sentido de circulación: +1 = ida, -1 = vuelta
+        self.sentido = sentido
+        
+        # Velocidad base (antes de ajustes por tramo horario y congestión)
+        self.velocidad_base = velocidad_base
+        
+        # Retraso acumulado (aún no usado en detalle, pero reservado para futura extensión)
+        self.retraso = 0.0
+    
+    def velocidad_efectiva_horario(self):
+        """
+        Esta función ajusta la velocidad base según el tramo horario activo.
+        """
+        tramo = self.model.tramo_actual
+        
+        if tramo == "punta_manana":
+            return 0.5 * self.velocidad_base  # Más congestión → menor velocidad
+        elif tramo == "valle":
+            return 1.0 * self.velocidad_base  # Condición normal
+        elif tramo == "punta_tarde":
+            return 0.6 * self.velocidad_base  # Congestión moderada
+        else:
+            # Fuera de tramos definidos → velocidad normal
+            return 1.0 * self.velocidad_base
+    
+    def distancia_al_frontal(self):
+        """
+        En esta función calculo la distancia al colectivo inmediatamente frontal
+        que va en el mismo sentido y está por delante en el corredor.
+        Si no hay colectivo por delante, retorno None.
+        """
+        # Inicializo la distancia mínima como None
+        distancia_min = None
+        
+        for otro in self.model.colectivos:
+            if otro is self:
+                continue
+            
+            # Mismo sentido de circulación
+            if otro.sentido == self.sentido:
+                # Caso sentido ida (+1): el frontal está si su posición es mayor
+                if self.sentido == 1 and otro.posicion > self.posicion:
+                    distancia = otro.posicion - self.posicion
+                # Caso sentido vuelta (-1): el frontal está si su posición es menor
+                elif self.sentido == -1 and otro.posicion < self.posicion:
+                    distancia = self.posicion - otro.posicion
+                else:
+                    continue
+                
+                # Actualizo la distancia mínima si corresponde
+                if distancia_min is None or distancia < distancia_min:
+                    distancia_min = distancia
+        
+        return distancia_min
+    
+    def step(self):
+        # 1. Velocidad ajustada por tramo horario (sin congestión aún)
+        v_horario = self.velocidad_efectiva_horario()
+        
+        # 2. Cálculo de la distancia al vehículo frontal
+        distancia_frontal = self.distancia_al_frontal()
+        
+        # 3. Defino una distancia de seguridad (en tramos)
+        distancia_seguridad = 1.0
+        
+        # 4. Ajuste por congestión:
+        #    - Si hay un vehículo muy cerca delante, reduzco o anulo velocidad
+        if distancia_frontal is not None and distancia_frontal < distancia_seguridad:
+            v_efectiva = 0.0  # El colectivo se detiene por congestión
+        else:
+            v_efectiva = v_horario
+        
+        # 5. Calculo la nueva posición tentativa
+        nueva_posicion = self.posicion + self.sentido * v_efectiva
+        
+        # 6. Impongo los bordes del corredor [0, longitud_corredor]
+        if nueva_posicion > self.model.longitud_corredor:
+            self.sentido = -1
+            self.posicion = self.model.longitud_corredor
+        elif nueva_posicion < 0:
+            self.sentido = 1
+            self.posicion = 0
+        else:
+            self.posicion = nueva_posicion
+
+
+# En esta celda pruebo la congestión endógena con varios colectivos en el corredor
+
+tramos = [
+    ("punta_manana", 0, 20),
+    ("valle", 21, 50),
+    ("punta_tarde", 51, 80)
+]
+
+modelo_prueba_congestion = ModeloTransporte(
+    n_colectivos=3,
+    longitud_corredor=12,
+    punto_observacion=5,
+    tramos_horarios=tramos
+)
+
+# Posiciones iniciales escalonadas para forzar interacción
+modelo_prueba_congestion.colectivos[0].posicion = 0
+modelo_prueba_congestion.colectivos[1].posicion = 2
+modelo_prueba_congestion.colectivos[2].posicion = 4
+
+# Todos en sentido de ida inicialmente
+for c in modelo_prueba_congestion.colectivos:
+    c.sentido = 1
+
+# Ejecuto 80 ticks
+for t in range(80):
+    modelo_prueba_congestion.step()
+
+print("Cruces (tau_j) con congestión:")
+print(modelo_prueba_congestion.registro_cruces)
+
+print("\nHeadways con congestión (H_j):")
+print(modelo_prueba_congestion.headways)
+
+
+# En esta celda visualizo la serie temporal de headways emergentes del modelo con congestión
+
+import matplotlib.pyplot as plt
+
+# Extraigo la serie de headways desde el modelo ya ejecutado
+H = modelo_prueba_congestion.headways
+
+# Construyo el eje de orden de ocurrencia j
+j = range(1, len(H) + 1)
+
+# Creo la figura
+plt.figure()
+plt.plot(j, H, marker='o')
+plt.xlabel("Índice de cruce j")
+plt.ylabel("Headway H_j")
+plt.title("Serie de headways emergentes con congestión y tramos horarios")
+plt.grid(True)
+plt.show()
+
+
+import matplotlib.pyplot as plt
+
+# =======================================================
+# RECONSTRUCCIÓN DE DATOS DESDE LOS RESULTADOS VALIDADOS
+# (para asegurar reproducibilidad de la visualización)
+# =======================================================
+
+# Headways validados con congestión
+H = [1, 3, 1, 3, 1, 15, 2, 2, 7, 2, 2, 11, 3, 1, 2, 1, 12, 1, 2, 1, 2, 1]
+
+# Tiempos de cruce validados
+taus = [1, 2, 5, 6, 9, 10, 25, 27, 29, 36, 38, 40, 51, 54, 55, 57, 58, 70, 71, 73, 74, 76, 77]
+
+# Definición de tramos horarios usada en la simulación
+tramos = [
+    ("punta_manana", 0, 20),
+    ("valle", 21, 50),
+    ("punta_tarde", 51, 80)
+]
+
+# =======================================================
+# FUNCIÓN DE ASIGNACIÓN TRAMO A CADA HEADWAY
+# =======================================================
+
+def asignar_tramo(tau, tramos):
+    for nombre, t_ini, t_fin in tramos:
+        if t_ini <= tau <= t_fin:
+            return nombre
+    return None
+
+# El headway H_j usa el tau_{j+1}
+tramos_H = [asignar_tramo(taus[i+1], tramos) for i in range(len(H))]
+
+# Agrupación por tramo
+datos_por_tramo = {}
+for h, tramo in zip(H, tramos_H):
+    if tramo not in datos_por_tramo:
+        datos_por_tramo[tramo] = []
+    datos_por_tramo[tramo].append(h)
+
+# =======================================================
+# VISUALIZACIÓN 1: BOXPLOT POR TRAMO HORARIO
+# =======================================================
+
+plt.figure()
+plt.boxplot(datos_por_tramo.values())
+plt.xticks(range(1, len(datos_por_tramo) + 1), datos_por_tramo.keys())
+plt.xlabel("Tramo horario")
+plt.ylabel("Headway H_j")
+plt.title("Distribución de headways por tramo horario")
+plt.grid(True)
+plt.show()
+
+# =======================================================
+# VISUALIZACIÓN 2: MEDIA DEL HEADWAY POR TRAMO HORARIO
+# =======================================================
+
+tramos_nombres = list(datos_por_tramo.keys())
+medias_por_tramo = [sum(valores) / len(valores) for valores in datos_por_tramo.values()]
+
+plt.figure()
+plt.bar(tramos_nombres, medias_por_tramo)
+plt.xlabel("Tramo horario")
+plt.ylabel("Headway medio")
+plt.title("Headway medio por tramo horario")
+plt.grid(True)
+plt.show()
+
+
+# En esta celda defino la configuración de tramos horarios y
+# una función para correr UN escenario y resumir headways por tramo horario
+
+import numpy as np
+
+# Aquí fijo los mismos tramos horarios que he venido usando en las simulaciones de prueba
+tramos_horarios_experimento = [
+    ("punta_manana", 0, 20),
+    ("valle",        21, 50),
+    ("punta_tarde",  51, 80)
+]
+
+# En esta función asigno a qué tramo horario pertenece un tiempo de cruce tau_j
+def asignar_tramo(tau, tramos):
+    # Recorro todos los tramos y verifico en cuál intervalo cae tau
+    for nombre, t_ini, t_fin in tramos:
+        if t_ini <= tau <= t_fin:
+            return nombre
+    # Si no pertenece a ningún tramo definido, devuelvo None
+    return None
+
+
+# En esta función corro UN escenario con N_a colectivos y n_ticks pasos
+# y construyo un resumen de headways por tramo horario
+def correr_escenario_unico(N_a, n_ticks=80):
+    # 1. Aquí creo el modelo con N_a colectivos y la configuración de tramos horarios del experimento
+    modelo = ModeloTransporte(
+        n_colectivos=N_a,
+        longitud_corredor=12,
+        punto_observacion=5,
+        tramos_horarios=tramos_horarios_experimento
+    )
+
+    # 2. Aquí inicializo las posiciones de los colectivos de forma escalonada
+    #    para inducir interacción a lo largo del corredor
+    for idx, c in enumerate(modelo.colectivos):
+        # Distribuyo las posiciones en los primeros tramos del corredor
+        c.posicion = (idx % (modelo.longitud_corredor + 1))
+        c.sentido = 1  # Todos parten en sentido de ida
+
+    # 3. Aquí ejecuto la simulación durante n_ticks
+    for t in range(n_ticks):
+        modelo.step()
+
+    # 4. Aquí recupero la serie de tiempos de cruce tau_j y los headways H_j
+    taus = modelo.registro_cruces
+    H = modelo.headways
+
+    # 5. Aquí preparo una estructura para guardar los headways por tramo horario
+    resumen = {}
+    for nombre, _, _ in tramos_horarios_experimento:
+        resumen[nombre] = {
+            "H": [],      # Aquí guardo todos los H_j que caen en este tramo
+            "media": None,
+            "varianza": None,
+            "cv": None
+        }
+
+    # 6. Aquí asigno cada headway H_j al tramo horario correspondiente,
+    #    usando el tiempo de cruce tau_{j} o tau_{j+1} según la convención
+    #    (uso tau_{j+1} porque H_j = tau_{j+1} - tau_j)
+    for j, h_j in enumerate(H):
+        if j + 1 < len(taus):
+            tau_asociado = taus[j + 1]
+            tramo = asignar_tramo(tau_asociado, tramos_horarios_experimento)
+        else:
+            tramo = None
+
+        if tramo in resumen:
+            resumen[tramo]["H"].append(h_j)
+
+    # 7. Aquí calculo las métricas estadísticas para cada tramo horario
+    for nombre, info in resumen.items():
+        H_tramo = info["H"]
+        if len(H_tramo) >= 2:
+            media = float(np.mean(H_tramo))
+            varianza = float(np.var(H_tramo, ddof=1))
+            if media != 0:
+                cv = float(np.sqrt(varianza) / media)
+            else:
+                cv = None
+
+            info["media"] = media
+            info["varianza"] = varianza
+            info["cv"] = cv
+
+    # 8. Devuelvo el modelo (por si quiero inspeccionar más cosas)
+    #    y el diccionario resumen con H_j y métricas por tramo horario
+    return modelo, resumen
+
+
+# En esta celda corro el escenario S1 con N_a = 20 colectivos y 80 ticks
+
+modelo_S1, resumen_S1 = correr_escenario_unico(N_a=20, n_ticks=80)
+
+# Aquí imprimo el resumen de métricas por tramo horario
+print("Resumen de headways por tramo horario para N_a = 20:\n")
+for tramo, info in resumen_S1.items():
+    print(f"Tramo: {tramo}")
+    print(f"  H_j observados: {info['H']}")
+    print(f"  Headway medio: {info['media']}")
+    print(f"  Varianza del headway: {info['varianza']}")
+    print(f"  Coeficiente de variación (CV): {info['cv']}\n")
+
+
+
+# En esta celda redefino la función para correr UN escenario
+# Ahora incorporo aleatoriedad en las condiciones iniciales para poder hacer replicaciones tipo Monte Carlo
+
+import numpy as np
+
+# Mantengo la misma definición de tramos horarios del experimento
+tramos_horarios_experimento = [
+    ("punta_manana", 0, 20),
+    ("valle",        21, 50),
+    ("punta_tarde",  51, 80)
+]
+
+def asignar_tramo(tau, tramos):
+    # En esta función asigno a qué tramo horario pertenece un tiempo de cruce tau_j
+    for nombre, t_ini, t_fin in tramos:
+        if t_ini <= tau <= t_fin:
+            return nombre
+    return None
+
+def correr_escenario_unico(N_a, n_ticks=80, seed=None):
+    """
+    En esta función corro UNA simulación para un número fijo de colectivos N_a.
+    Incorporo aleatoriedad en las condiciones iniciales para que distintas corridas
+    con el mismo N_a generen series de headways distintas.
+    """
+    # 0. Si me dan una semilla, la uso para hacer reproducible la corrida
+    if seed is not None:
+        np.random.seed(seed)
+    
+    # 1. Aquí creo el modelo con N_a colectivos
+    modelo = ModeloTransporte(
+        n_colectivos=N_a,
+        longitud_corredor=12,
+        punto_observacion=5,
+        tramos_horarios=tramos_horarios_experimento
+    )
+
+    # 2. Aquí inicializo las posiciones y sentidos de forma aleatoria
+    for c in modelo.colectivos:
+        # Asigno una posición inicial aleatoria en el corredor discreto
+        c.posicion = np.random.randint(0, modelo.longitud_corredor + 1)
+        # Asigno un sentido aleatorio: +1 (ida) o -1 (vuelta)
+        c.sentido = np.random.choice([1, -1])
+
+    # 3. Aquí ejecuto la simulación durante n_ticks pasos
+    for t in range(n_ticks):
+        modelo.step()
+
+    # 4. Aquí recupero la serie de tiempos de cruce tau_j y los headways H_j
+    taus = modelo.registro_cruces
+    H = modelo.headways
+
+    # 5. Aquí preparo una estructura para guardar los headways y métricas por tramo horario
+    resumen = {}
+    for nombre, _, _ in tramos_horarios_experimento:
+        resumen[nombre] = {
+            "H": [],      # Aquí guardo todos los H_j que caen en este tramo
+            "media": None,
+            "varianza": None,
+            "cv": None
+        }
+
+    # 6. Aquí asigno cada headway H_j al tramo horario según tau_{j+1}
+    for j, h_j in enumerate(H):
+        if j + 1 < len(taus):
+            tau_asociado = taus[j + 1]
+            tramo = asignar_tramo(tau_asociado, tramos_horarios_experimento)
+        else:
+            tramo = None
+
+        if tramo in resumen:
+            resumen[tramo]["H"].append(h_j)
+
+    # 7. Aquí calculo las métricas estadísticas para cada tramo horario
+    for nombre, info in resumen.items():
+        H_tramo = info["H"]
+        if len(H_tramo) >= 2:
+            media = float(np.mean(H_tramo))
+            varianza = float(np.var(H_tramo, ddof=1))
+            if media != 0:
+                cv = float(np.sqrt(varianza) / media)
+            else:
+                cv = None
+
+            info["media"] = media
+            info["varianza"] = varianza
+            info["cv"] = cv
+
+    # 8. Devuelvo el modelo por si quiero inspeccionar más,
+    #    y el diccionario resumen con métricas por tramo horario
+    return modelo, resumen
+
+# En esta celda defino una función para hacer muchas replicaciones tipo Monte Carlo
+# para un N_a fijo, y guardar la distribución de medias, varianzas y CV por tramo horario
+
+def replicar_escenario(N_a, n_reps=50, n_ticks=80):
+    """
+    En esta función corro el escenario con N_a colectivos n_reps veces.
+    Para cada réplica guardo la media, la varianza y el CV por tramo horario.
+    """
+    # Aquí creo una estructura para acumular los resultados por tramo
+    resultados = {}
+    for nombre, _, _ in tramos_horarios_experimento:
+        resultados[nombre] = {
+            "medias": [],
+            "varianzas": [],
+            "cvs": []
+        }
+    
+    # Aquí recorro las replicaciones
+    for r in range(n_reps):
+        # Uso una semilla distinta en cada réplica
+        _, resumen = correr_escenario_unico(N_a=N_a, n_ticks=n_ticks, seed=r)
+        
+        # Para cada tramo horario, extraigo media, varianza y CV y los agrego
+        for nombre in resultados.keys():
+            info_tramo = resumen[nombre]
+            if info_tramo["media"] is not None and info_tramo["cv"] is not None:
+                resultados[nombre]["medias"].append(info_tramo["media"])
+                resultados[nombre]["varianzas"].append(info_tramo["varianza"])
+                resultados[nombre]["cvs"].append(info_tramo["cv"])
+    
+    # Devuelvo un diccionario con listas de medias, varianzas y CV por tramo
+    return resultados
+
+
+# En esta celda corro las replicaciones para los tres escenarios N_a = 20, 40 y 50
+
+N_lista = [20, 40, 50]
+n_reps = 50
+
+resultados_por_N = {}
+
+for N_a in N_lista:
+    print(f"Corriendo replicaciones para N_a = {N_a} ...")
+    resultados_por_N[N_a] = replicar_escenario(N_a=N_a, n_reps=n_reps, n_ticks=80)
+
+print("\nTerminé de correr todas las replicaciones.")
+
+
+# En esta celda construyo un gráfico del CV promedio por tramo horario vs número de colectivos
+
+import matplotlib.pyplot as plt
+
+# Aquí preparo estructuras para guardar los CV promedio por tramo y N_a
+tramos_nombres = [nombre for nombre, _, _ in tramos_horarios_experimento]
+
+cv_promedio_por_tramo_y_N = {tramo: [] for tramo in tramos_nombres}
+
+# Aquí calculo el CV promedio para cada tramo y cada N_a
+for N_a in N_lista:
+    res_N = resultados_por_N[N_a]
+    for tramo in tramos_nombres:
+        cvs_tramo = res_N[tramo]["cvs"]
+        if len(cvs_tramo) > 0:
+            cv_mean = float(np.mean(cvs_tramo))
+        else:
+            cv_mean = np.nan
+        cv_promedio_por_tramo_y_N[tramo].append(cv_mean)
+
+# Aquí genero el gráfico
+plt.figure()
+
+# Recorro cada tramo y dibujo una curva CV_promedio vs N_a
+for tramo in tramos_nombres:
+    plt.plot(N_lista, cv_promedio_por_tramo_y_N[tramo], marker='o', label=tramo)
+
+plt.xlabel("Número de colectivos N_a")
+plt.ylabel("CV promedio del headway")
+plt.title("Coeficiente de variación promedio del headway por tramo horario y número de colectivos")
+plt.grid(True)
+plt.legend()
+plt.show()
